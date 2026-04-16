@@ -1,0 +1,48 @@
+[mainConfig]
+appName = "ai-chat"
+host = "127.0.0.1"
+port = 8080
+
+[emailConfig]
+authcode = ""
+email = ""
+
+[redisConfig]
+host = "127.0.0.1"
+port = 6380
+password = ""
+db = 0
+
+[mysqlConfig]
+host = "127.0.0.1"
+port = 3306
+user = "root"
+password = ""
+databaseName = "ai_chat"
+charset =  "utf8mb4"
+
+[jwtConfig]
+ expire_duration= 8760
+ issuer= ""
+ subject= "ai-chat"
+ key= "ai-chat"
+
+ [rabbitmqConfig]
+  host= "127.0.0.1"
+  port= 5672
+  username= "guest"
+  password= "guest"
+  vhost= "/"
+
+ [ragModelConfig]
+  embeddingModel= "text-embedding-3-small"
+  chatModelName="gpt-4o-mini"
+  baseUrl="https://api.openai-proxy.org/v1"
+  dimension=1536
+  chunkSize=800
+  chunkOverlap=120
+  topK=5
+
+  [voiceServiceConfig]
+  voiceServiceApiKey = "baiduApiKey"
+  voiceServiceSecretKey ="baiduSecretKey"
