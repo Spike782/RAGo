@@ -112,6 +112,13 @@ func (m *MCPClient) CallWebFetchTool(ctx context.Context, targetURL string, maxC
 	})
 }
 
+func (m *MCPClient) CallTranslateTool(ctx context.Context, text, sourceLang, targetLang string) (*mcp.CallToolResult, error) {
+	return m.CallTool(ctx, "translate_text", map[string]any{
+		"text":        text,
+		"source_lang": sourceLang,
+		"target_lang": targetLang,
+	})
+}
 
 func (m *MCPClient) GetToolResultText(result *mcp.CallToolResult) string {
 	var text string

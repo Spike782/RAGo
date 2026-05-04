@@ -19,12 +19,15 @@ func main() {
 	mode := flag.String("mode", "", "run mode: server or client")
 	httpAddr := flag.String("http-addr", ":8082", "HTTP server address")
 	city := flag.String("city", "", "city name for weather query")
-	tool := flag.String("tool", "get_weather", "tool name: get_weather|get_weather_forecast|web_search|web_fetch")
+	tool := flag.String("tool", "get_weather", "tool name: get_weather|get_weather_forecast|web_search|web_fetch|translate_text")
 	days := flag.Int("days", 3, "forecast days for get_weather_forecast")
 	query := flag.String("query", "", "query for web_search")
 	limit := flag.Int("limit", 5, "limit for web_search")
 	targetURL := flag.String("url", "", "url for web_fetch")
 	maxChars := flag.Int("max-chars", 4000, "max chars for web_fetch")
+	text := flag.String("text", "", "text for translate_text")
+	sourceLang := flag.String("source-lang", "auto", "source language for translate_text")
+	targetLang := flag.String("target-lang", "zh", "target language for translate_text")
 	flag.Parse()
 
 	if *mode == "" {
@@ -83,6 +86,11 @@ func main() {
 				log.Fatal("-url is required for web_fetch")
 			}
 			result, err = mcpClient.CallWebFetchTool(ctx, *targetURL, *maxChars)
+		case "translate_text":
+			if strings.TrimSpace(*text) == "" {
+				log.Fatal("-text is required for translate_text")
+			}
+			result, err = mcpClient.CallTranslateTool(ctx, *text, *sourceLang, *targetLang)
 
 		default:
 			log.Fatalf("unsupported tool: %s", *tool)

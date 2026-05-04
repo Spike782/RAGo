@@ -38,6 +38,6 @@ func MQMessage(msg *amqp.Delivery) error {
 		UserName:  param.UserName,
 		IsUser:    param.IsUser,
 	}
-	message.CreateMessage(newMsg)
-	return nil
+	_, err = message.CreateMessage(newMsg)
+	return err
 }

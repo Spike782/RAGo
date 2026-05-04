@@ -32,6 +32,7 @@ func Login(email, password string) (string, code.Code) {
 	if err != nil {
 		return "", code.CodeServerBusy
 	}
+	_ = myredis.SetUserOnline(userInformation.Email)
 	return token, code.CodeSuccess
 }
 
@@ -58,6 +59,7 @@ func Register(email, password, captcha string) (string, code.Code) {
 	if err != nil {
 		return "", code.CodeServerBusy
 	}
+	_ = myredis.SetUserOnline(userInformation.Email)
 
 	return token, code.CodeSuccess
 }

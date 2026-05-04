@@ -2,6 +2,7 @@ package rabbitmq
 
 var (
 	RMQMessage *RabbitMQ
+	RMQFileIdx *RabbitMQ
 )
 
 func InitRabbitMQ() {
@@ -11,10 +12,17 @@ func InitRabbitMQ() {
 
 	RMQMessage = NewWorkRabbitMQ("Message")
 	go RMQMessage.Consume(MQMessage)
+	RMQFileIdx = NewWorkRabbitMQ("RAGIndex")
+	go RMQFileIdx.Consume(MQFileIndex)
 
 }
 
 // DestroyRabbitMQ 销毁RabbitMQ
 func DestroyRabbitMQ() {
-	RMQMessage.Destroy()
+	if RMQMessage != nil {
+		RMQMessage.Destroy()
+	}
+	if RMQFileIdx != nil {
+		RMQFileIdx.Destroy()
+	}
 }

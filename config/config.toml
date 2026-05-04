@@ -33,16 +33,46 @@ charset =  "utf8mb4"
   username= "guest"
   password= "guest"
   vhost= "/"
+  retryMax= 3
+  retryDelayMs= 5000
 
  [ragModelConfig]
   embeddingModel= "text-embedding-3-small"
+  embeddingBaseUrl=""
+  embeddingApiKey=""
   chatModelName="gpt-4o-mini"
   baseUrl="https://api.openai-proxy.org/v1"
   dimension=1536
   chunkSize=800
   chunkOverlap=120
   topK=5
+  vectorStore="qdrant"
+  hybridEnabled=true
+  hybridVectorWeight=0.75
+  hybridLexicalWeight=0.25
+  rerankEnabled=true
+  rerankTopN=30
+  rerankBaseWeight=0.65
+  rerankLexicalWeight=0.25
+  rerankPositionWeight=0.10
+  qdrantUrl=""
+  qdrantApiKey=""
+  qdrantTimeoutSeconds=15
+  qdrantCollectionPrefix="rag_docs_"
+  contextMaxTokens=16384
+  reservedOutputTokens=2048
+  minContextMessages=6
+  reactMaxSteps=4
 
   [voiceServiceConfig]
   voiceServiceApiKey = "baiduApiKey"
   voiceServiceSecretKey ="baiduSecretKey"
+
+ [rateLimitConfig]
+  enabled = true
+  windowSeconds = 60
+  maxRequests = 120
+
+ [onlineConfig]
+  enabled = true
+  ttlSeconds = 120

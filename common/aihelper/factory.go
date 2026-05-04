@@ -37,7 +37,8 @@ func (f *AIModelFactory) registerCreators() {
 		if !ok {
 			return nil, fmt.Errorf("RAG model requires email")
 		}
-		return NewAliRAGModel(ctx, userEmail)
+		kbID, _ := config["kbId"].(string)
+		return NewAliRAGModel(ctx, userEmail, kbID)
 	}
 
 	f.creators["3"] = func(ctx context.Context, config map[string]interface{}) (AIModel, error) {

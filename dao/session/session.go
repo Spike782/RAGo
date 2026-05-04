@@ -5,9 +5,9 @@ import (
 	"ai-chat/model"
 )
 
-func GetSessionsByUserName(UserName int64) ([]model.Session, error) {
+func GetSessionsByUserEmail(userEmail string) ([]model.Session, error) {
 	var sessions []model.Session
-	err := mysql.DB.Where("user_name = ?", UserName).Find(&sessions).Error
+	err := mysql.DB.Where("user_name = ?", userEmail).Order("created_at desc").Find(&sessions).Error
 	return sessions, err
 }
 

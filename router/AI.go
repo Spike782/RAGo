@@ -15,6 +15,7 @@ func AIRouter(r *gin.RouterGroup) {
 		r.POST("/chat/send-new-session", session.CreateSessionAndSendMessage)
 		r.POST("/chat/send", session.ChatSend)
 		r.POST("/chat/history", session.ChatHistory)
+		r.POST("/chat/retrieve-debug", session.RetrieveDebug)
 
 		// TTS鐩稿叧鎺ュ彛
 		r.POST("/chat/tts", tts.CreateTTSTask)

@@ -2,6 +2,7 @@ package jwt
 
 import (
 	"ai-chat/common/code"
+	myredis "ai-chat/common/redis"
 	"ai-chat/controller"
 	"ai-chat/utils/jwt"
 	"log"
@@ -38,6 +39,9 @@ func Auth() gin.HandlerFunc {
 		}
 
 		c.Set("userEmail", userEmail)
+		if err := myredis.SetUserOnline(userEmail); err != nil {
+			log.Printf("set user online failed: %v", err)
+		}
 		c.Next()
 	}
 }

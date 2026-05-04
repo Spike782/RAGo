@@ -59,6 +59,9 @@ func CheckCaptchaForEmail(email, userInput string) (bool, error) {
 
 // InitRedisIndex 初始化 Redis 索引，支持按文件名区分
 func InitRedisIndex(ctx context.Context, filename string, dimension int) error {
+	if Rdb == nil {
+		return fmt.Errorf("redis client is not initialized")
+	}
 	indexName := GenerateIndexName(filename)
 
 	// 检查索引是否存在
@@ -102,6 +105,9 @@ func InitRedisIndex(ctx context.Context, filename string, dimension int) error {
 
 // DeleteRedisIndex 删除 Redis 索引，支持按文件名区分
 func DeleteRedisIndex(ctx context.Context, filename string) error {
+	if Rdb == nil {
+		return fmt.Errorf("redis client is not initialized")
+	}
 	indexName := GenerateIndexName(filename)
 
 	// 删除索引

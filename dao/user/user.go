@@ -2,6 +2,7 @@ package user
 
 import (
 	"ai-chat/common/mysql"
+	myredis "ai-chat/common/redis"
 	"ai-chat/model"
 	"ai-chat/utils"
 	"context"
@@ -17,10 +18,15 @@ const (
 var ctx = context.Background()
 
 func IsExistEmail(email string) (bool, *model.User) {
+	if cachedUser, ok, err := myredis.GetCachedUser(email); err == nil && ok && cachedUser != nil {
+		return true, cachedUser
+	}
+
 	user, err := mysql.GetUserByEmail(email)
 	if err == gorm.ErrRecordNotFound || user == nil {
 		return false, nil
 	}
+	_ = myredis.SetCachedUser(user)
 	return true, user
 }
 
@@ -33,6 +39,7 @@ func Register(email, password string) (*model.User, bool) {
 	}); err != nil {
 		return nil, false
 	} else {
+		_ = myredis.SetCachedUser(user)
 		return user, true
 	}
 }

@@ -3,35 +3,51 @@ package session
 import (
 	"ai-chat/common/aihelper"
 	"ai-chat/common/code"
+	"ai-chat/common/rag"
+	myredis "ai-chat/common/redis"
+	"ai-chat/dao/message"
 	"ai-chat/dao/session"
 	"ai-chat/model"
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 var ctx = context.Background()
 
-func GetUserSessionsByUserEmail(userEmail string) ([]model.SessionInfo, error) {
-
-	manager := aihelper.GetGlobalManager()
-	Sessions := manager.GetUserSession(userEmail)
-
-	var SessionInfos []model.SessionInfo
-
-	for _, session := range Sessions {
-		SessionInfos = append(SessionInfos, model.SessionInfo{
-			SessionID: session,
-			Title:     session,
-		})
+func buildModelConfig(userEmail, kbID string) map[string]interface{} {
+	return map[string]interface{}{
+		"email": userEmail,
+		"kbId":  rag.NormalizeKnowledgeBaseID(kbID),
 	}
-
-	return SessionInfos, nil
 }
 
-func CreateSessionAndSendMessage(userEmail string, userQuestion string, modelType string) (string, string, code.Code) {
+func GetUserSessionsByUserEmail(userEmail string) ([]model.SessionInfo, error) {
+	sessions, err := session.GetSessionsByUserEmail(userEmail)
+	if err != nil {
+		return nil, err
+	}
+
+	infos := make([]model.SessionInfo, 0, len(sessions))
+	for _, s := range sessions {
+		title := strings.TrimSpace(s.Title)
+		if title == "" {
+			title = s.ID
+		}
+		infos = append(infos, model.SessionInfo{
+			SessionID: s.ID,
+			Title:     title,
+		})
+	}
+	return infos, nil
+}
+
+func CreateSessionAndSendMessage(userEmail, userQuestion, modelType, kbID string) (string, string, *rag.RetrievalTrace, code.Code) {
 	newSession := &model.Session{
 		ID:       uuid.New().String(),
 		UserName: userEmail,
@@ -40,30 +56,26 @@ func CreateSessionAndSendMessage(userEmail string, userQuestion string, modelTyp
 	createdSession, err := session.CreateSession(newSession)
 	if err != nil {
 		log.Println("CreateSessionAndSendMessage CreateSession error:", err)
-		return "", "", code.CodeServerBusy
+		return "", "", nil, code.CodeServerBusy
 	}
 
 	manager := aihelper.GetGlobalManager()
-	config := map[string]interface{}{
-		"apiKey": "your-api-key",
-		"email":  userEmail,
-	}
-	helper, err := manager.GetOrCreateAIHelper(userEmail, createdSession.ID, modelType, config)
+	helper, err := manager.GetOrCreateAIHelper(userEmail, createdSession.ID, modelType, buildModelConfig(userEmail, kbID))
 	if err != nil {
 		log.Println("CreateSessionAndSendMessage GetOrCreateAIHelper error:", err)
-		return "", "", code.AIModelFail
+		return "", "", nil, code.AIModelFail
 	}
 
-	aiResponse, err_ := helper.GenerateResponse(userEmail, ctx, userQuestion)
-	if err_ != nil {
-		log.Println("CreateSessionAndSendMessage GenerateResponse error:", err_)
-		return "", "", code.AIModelFail
+	aiResponse, err := helper.GenerateResponse(userEmail, ctx, userQuestion)
+	if err != nil {
+		log.Println("CreateSessionAndSendMessage GenerateResponse error:", err)
+		return "", "", nil, code.AIModelFail
 	}
 
-	return createdSession.ID, aiResponse.Content, code.CodeSuccess
+	return createdSession.ID, aiResponse.Content, helper.GetLastRetrievalTrace(), code.CodeSuccess
 }
 
-func CreateStreamSessionOnly(userEmail string, userQuestion string) (string, code.Code) {
+func CreateStreamSessionOnly(userEmail, userQuestion string) (string, code.Code) {
 	newSession := &model.Session{
 		ID:       uuid.New().String(),
 		UserName: userEmail,
@@ -78,7 +90,7 @@ func CreateStreamSessionOnly(userEmail string, userQuestion string) (string, cod
 }
 
 // Stream response to an existing session via SSE.
-func StreamMessageToExistingSession(userEmail string, sessionID string, userQuestion string, modelType string, writer http.ResponseWriter) code.Code {
+func StreamMessageToExistingSession(userEmail, sessionID, userQuestion, modelType, kbID string, writer http.ResponseWriter) code.Code {
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
 		log.Println("StreamMessageToExistingSession: streaming unsupported")
@@ -86,35 +98,37 @@ func StreamMessageToExistingSession(userEmail string, sessionID string, userQues
 	}
 
 	manager := aihelper.GetGlobalManager()
-	config := map[string]interface{}{
-		"apiKey": "your-api-key",
-		"email":  userEmail,
-	}
-	helper, err := manager.GetOrCreateAIHelper(userEmail, sessionID, modelType, config)
+	helper, err := manager.GetOrCreateAIHelper(userEmail, sessionID, modelType, buildModelConfig(userEmail, kbID))
 	if err != nil {
 		log.Println("StreamMessageToExistingSession GetOrCreateAIHelper error:", err)
 		return code.AIModelFail
 	}
 
 	cb := func(msg string) {
-		log.Printf("[SSE] Sending chunk: %s (len=%d)\n", msg, len(msg))
-		_, err := writer.Write([]byte("data: " + msg + "\n\n"))
-		if err != nil {
-			log.Println("[SSE] Write error:", err)
+		_, werr := writer.Write([]byte("data: " + msg + "\n\n"))
+		if werr != nil {
+			log.Println("[SSE] Write error:", werr)
 			return
 		}
 		flusher.Flush()
-		log.Println("[SSE] Flushed")
 	}
 
-	_, err_ := helper.StreamResponse(userEmail, ctx, cb, userQuestion)
-	if err_ != nil {
-		log.Println("StreamMessageToExistingSession StreamResponse error:", err_)
+	if _, err := helper.StreamResponse(userEmail, ctx, cb, userQuestion); err != nil {
+		log.Println("StreamMessageToExistingSession StreamResponse error:", err)
 		return code.AIModelFail
 	}
 
-	_, err = writer.Write([]byte("data: [DONE]\n\n"))
-	if err != nil {
+	if trace := helper.GetLastRetrievalTrace(); trace != nil && trace.Enabled {
+		if raw, err := json.Marshal(trace); err == nil {
+			if _, err := writer.Write([]byte("event: retrieval\ndata: " + string(raw) + "\n\n")); err != nil {
+				log.Println("StreamMessageToExistingSession write retrieval event error:", err)
+			} else {
+				flusher.Flush()
+			}
+		}
+	}
+
+	if _, err := writer.Write([]byte("data: [DONE]\n\n")); err != nil {
 		log.Println("StreamMessageToExistingSession write DONE error:", err)
 		return code.AIModelFail
 	}
@@ -123,63 +137,91 @@ func StreamMessageToExistingSession(userEmail string, sessionID string, userQues
 	return code.CodeSuccess
 }
 
-func CreateStreamSessionAndSendMessage(userEmail string, userQuestion string, modelType string, writer http.ResponseWriter) (string, code.Code) {
-
+func CreateStreamSessionAndSendMessage(userEmail, userQuestion, modelType, kbID string, writer http.ResponseWriter) (string, code.Code) {
 	sessionID, code_ := CreateStreamSessionOnly(userEmail, userQuestion)
 	if code_ != code.CodeSuccess {
 		return "", code_
 	}
 
-	code_ = StreamMessageToExistingSession(userEmail, sessionID, userQuestion, modelType, writer)
+	code_ = StreamMessageToExistingSession(userEmail, sessionID, userQuestion, modelType, kbID, writer)
 	if code_ != code.CodeSuccess {
-
 		return sessionID, code_
 	}
-
 	return sessionID, code.CodeSuccess
 }
 
-func ChatSend(userEmail string, sessionID string, userQuestion string, modelType string) (string, code.Code) {
+func ChatSend(userEmail, sessionID, userQuestion, modelType, kbID string) (string, *rag.RetrievalTrace, code.Code) {
 	manager := aihelper.GetGlobalManager()
-	config := map[string]interface{}{
-		"email": userEmail,
-	}
-	helper, err := manager.GetOrCreateAIHelper(userEmail, sessionID, modelType, config)
+	helper, err := manager.GetOrCreateAIHelper(userEmail, sessionID, modelType, buildModelConfig(userEmail, kbID))
 	if err != nil {
 		log.Println("ChatSend GetOrCreateAIHelper error:", err)
-		return "", code.AIModelFail
+		return "", nil, code.AIModelFail
 	}
 
-	aiResponse, err_ := helper.GenerateResponse(userEmail, ctx, userQuestion)
-	if err_ != nil {
-		log.Println("ChatSend GenerateResponse error:", err_)
-		return "", code.AIModelFail
+	aiResponse, err := helper.GenerateResponse(userEmail, ctx, userQuestion)
+	if err != nil {
+		log.Println("ChatSend GenerateResponse error:", err)
+		return "", nil, code.AIModelFail
 	}
 
-	return aiResponse.Content, code.CodeSuccess
+	return aiResponse.Content, helper.GetLastRetrievalTrace(), code.CodeSuccess
 }
 
-func GetChatHistory(userEmail string, sessionID string) ([]model.History, code.Code) {
+func GetChatHistory(userEmail, sessionID string) ([]model.History, code.Code) {
 	manager := aihelper.GetGlobalManager()
 	helper, exists := manager.GetAIHelper(userEmail, sessionID)
-	if !exists {
-		return nil, code.CodeServerBusy
+	if exists {
+		messages := helper.GetMessages()
+		history := make([]model.History, 0, len(messages))
+		for _, msg := range messages {
+			history = append(history, model.History{
+				IsUser:  msg.IsUser,
+				Content: msg.Content,
+			})
+		}
+		_ = myredis.SetSessionHistoryCache(sessionID, history)
+		return history, code.CodeSuccess
 	}
 
-	messages := helper.GetMessages()
-	history := make([]model.History, 0, len(messages))
+	if history, ok, err := myredis.GetSessionHistoryCache(sessionID); err == nil && ok {
+		return history, code.CodeSuccess
+	}
 
-	for _, msg := range messages {
+	msgs, err := message.GetMessagesBySessionID(sessionID)
+	if err != nil {
+		log.Println("GetChatHistory load db error:", err)
+		return nil, code.CodeServerBusy
+	}
+	history := make([]model.History, 0, len(msgs))
+	for _, msg := range msgs {
 		history = append(history, model.History{
 			IsUser:  msg.IsUser,
 			Content: msg.Content,
 		})
 	}
-
+	_ = myredis.SetSessionHistoryCache(sessionID, history)
 	return history, code.CodeSuccess
 }
 
-func ChatStreamSend(userEmail string, sessionID string, userQuestion string, modelType string, writer http.ResponseWriter) code.Code {
+func ChatStreamSend(userEmail, sessionID, userQuestion, modelType, kbID string, writer http.ResponseWriter) code.Code {
+	return StreamMessageToExistingSession(userEmail, sessionID, userQuestion, modelType, kbID, writer)
+}
 
-	return StreamMessageToExistingSession(userEmail, sessionID, userQuestion, modelType, writer)
+func RetrieveDebug(userEmail, query, kbID string, topK int) (*rag.RetrievalTrace, code.Code) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, code.CodeInvalidParams
+	}
+
+	start := time.Now()
+	ragQuery, err := rag.NewRAGQueryWithTopK(ctx, userEmail, kbID, topK)
+	if err != nil {
+		return rag.BuildRetrievalErrorTrace(query, rag.NormalizeKnowledgeBaseID(kbID), "", topK, time.Since(start), err), code.CodeSuccess
+	}
+
+	docs, err := ragQuery.RetrieveDocuments(ctx, query)
+	if err != nil {
+		return rag.BuildRetrievalErrorTrace(query, ragQuery.KnowledgeBaseID(), ragQuery.StoreName(), ragQuery.TopK(), time.Since(start), err), code.CodeSuccess
+	}
+	return rag.BuildRetrievalTrace(query, ragQuery.KnowledgeBaseID(), ragQuery.StoreName(), ragQuery.TopK(), docs, time.Since(start)), code.CodeSuccess
 }

@@ -29,6 +29,13 @@
           <option value="2">OpenAI RAG</option>
           <option value="3">OpenAI MCP</option>
         </select>
+        <label class="inline-label" for="kbId">知识库</label>
+        <input
+          id="kbId"
+          v-model.trim="selectedKBID"
+          class="select-input"
+          placeholder="default"
+        />
 
         <label class="checkbox-label" for="streamingMode">
           <input id="streamingMode" type="checkbox" v-model="isStreaming" />
@@ -111,6 +118,7 @@ export default {
     const messagesRef = ref(null)
     const messageInput = ref(null)
     const selectedModel = ref('1')
+    const selectedKBID = ref('default')
     const isStreaming = ref(false)
     const uploading = ref(false)
     const fileInput = ref(null)
@@ -349,8 +357,8 @@ export default {
         Authorization: `Bearer ${localStorage.getItem('token') || ''}`
       }
       const body = useNewSession
-        ? { question, modelType: selectedModel.value }
-        : { question, modelType: selectedModel.value, sessionId: currentSessionId.value }
+        ? { question, modelType: selectedModel.value, kbId: selectedKBID.value || 'default' }
+        : { question, modelType: selectedModel.value, sessionId: currentSessionId.value, kbId: selectedKBID.value || 'default' }
 
       try {
         const response = await fetch(url, {
@@ -450,7 +458,8 @@ export default {
 
         const response = await api.post('/AI/chat/send-new-session', {
           question,
-          modelType: selectedModel.value
+          modelType: selectedModel.value,
+          kbId: selectedKBID.value || 'default'
         })
 
         if (response.data && response.data.status_code === 1000) {
@@ -483,7 +492,8 @@ export default {
         const response = await api.post('/AI/chat/send', {
           question,
           modelType: selectedModel.value,
-          sessionId: currentSessionId.value
+          sessionId: currentSessionId.value,
+          kbId: selectedKBID.value || 'default'
         })
 
         if (response.data && response.data.status_code === 1000) {
@@ -517,6 +527,7 @@ export default {
         uploading.value = true
         const formData = new FormData()
         formData.append('file', file)
+        formData.append('kbId', selectedKBID.value || 'default')
 
         const response = await api.post('/file/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
@@ -550,6 +561,7 @@ export default {
       messagesRef,
       messageInput,
       selectedModel,
+      selectedKBID,
       isStreaming,
       uploading,
       fileInput,

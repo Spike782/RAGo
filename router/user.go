@@ -13,3 +13,9 @@ func RegisterUserRouter(r *gin.RouterGroup) {
 		r.POST("/captcha", user.HandleCaptcha)
 	}
 }
+
+func RegisterUserAuthRouter(r *gin.RouterGroup) {
+	{
+		r.GET("/online-status", user.OnlineStatus)
+	}
+}

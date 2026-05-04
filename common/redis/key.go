@@ -19,3 +19,7 @@ func GenerateIndexNamePrefix(filename string) string {
 	prefix := fmt.Sprintf(config.DefaultRedisKeyConfig.IndexNamePrefix, filename)
 	return prefix
 }
+
+func GenerateOnlineKey(email string) string {
+	return fmt.Sprintf(config.DefaultRedisKeyConfig.OnlinePrefix, email)
+}

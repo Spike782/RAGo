@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	CodeMsg     = "ai-chat验证码如下(验证码2分钟内有效):"
-	UserNameMsg = "ai-chat的账号如下:"
+	CodeMsg     = "RAGo验证码如下(验证码2分钟内有效):"
+	UserNameMsg = "RAGo的账号如下:"
 )
 
 func SendCaptcha(email, code, msg string) error {
@@ -18,7 +18,7 @@ func SendCaptcha(email, code, msg string) error {
 	m.SetHeader("From", config.GetConfig().EmailConfig.Email)
 	m.SetHeader("To", email)
 
-	m.SetHeader("Subject", "来自ai-chat的消息")
+	m.SetHeader("Subject", "来自RAGo的消息")
 
 	m.SetBody("text/plain", msg+" "+code)
 

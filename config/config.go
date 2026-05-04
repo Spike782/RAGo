@@ -46,22 +46,54 @@ type Rabbitmq struct {
 	RabbitmqUsername string `toml:"username"`
 	RabbitmqPassword string `toml:"password"`
 	RabbitmqVhost    string `toml:"vhost"`
+	RabbitmqRetryMax int    `toml:"retryMax"`
+	RetryDelayMs     int    `toml:"retryDelayMs"`
 }
 
 type RagModelConfig struct {
-	RagEmbeddingModel string `toml:"embeddingModel"`
-	RagChatModelName  string `toml:"chatModelName"`
-	RagDocDir         string `toml:"docDir"`
-	RagBaseUrl        string `toml:"baseUrl"`
-	RagDimension      int    `toml:"dimension"`
-	RagChunkSize      int    `toml:"chunkSize"`
-	RagChunkOverlap   int    `toml:"chunkOverlap"`
-	RagTopK           int    `toml:"topK"`
+	RagEmbeddingModel string  `toml:"embeddingModel"`
+	RagEmbeddingURL   string  `toml:"embeddingBaseUrl"`
+	RagEmbeddingKey   string  `toml:"embeddingApiKey"`
+	RagChatModelName  string  `toml:"chatModelName"`
+	RagDocDir         string  `toml:"docDir"`
+	RagBaseUrl        string  `toml:"baseUrl"`
+	RagDimension      int     `toml:"dimension"`
+	RagChunkSize      int     `toml:"chunkSize"`
+	RagChunkOverlap   int     `toml:"chunkOverlap"`
+	RagTopK           int     `toml:"topK"`
+	RagVectorStore    string  `toml:"vectorStore"`
+	RagQdrantURL      string  `toml:"qdrantUrl"`
+	RagQdrantAPIKey   string  `toml:"qdrantApiKey"`
+	RagQdrantTimeoutS int     `toml:"qdrantTimeoutSeconds"`
+	RagQdrantPrefix   string  `toml:"qdrantCollectionPrefix"`
+	RagHybridEnabled  bool    `toml:"hybridEnabled"`
+	RagHybridVecW     float64 `toml:"hybridVectorWeight"`
+	RagHybridLexW     float64 `toml:"hybridLexicalWeight"`
+	RagRerankEnabled  bool    `toml:"rerankEnabled"`
+	RagRerankTopN     int     `toml:"rerankTopN"`
+	RagRerankBaseW    float64 `toml:"rerankBaseWeight"`
+	RagRerankLexW     float64 `toml:"rerankLexicalWeight"`
+	RagRerankPosW     float64 `toml:"rerankPositionWeight"`
+	ContextMaxTokens  int     `toml:"contextMaxTokens"`
+	ReservedOutputTok int     `toml:"reservedOutputTokens"`
+	MinContextMsgNum  int     `toml:"minContextMessages"`
+	ReactMaxSteps     int     `toml:"reactMaxSteps"`
 }
 
 type VoiceServiceConfig struct {
 	VoiceServiceApiKey    string `toml:"voiceServiceApiKey"`
 	VoiceServiceSecretKey string `toml:"voiceServiceSecretKey"`
+}
+
+type RateLimitConfig struct {
+	Enabled       bool `toml:"enabled"`
+	WindowSeconds int  `toml:"windowSeconds"`
+	MaxRequests   int  `toml:"maxRequests"`
+}
+
+type OnlineConfig struct {
+	Enabled    bool `toml:"enabled"`
+	TTLSeconds int  `toml:"ttlSeconds"`
 }
 
 type Config struct {
@@ -73,18 +105,22 @@ type Config struct {
 	Rabbitmq           `toml:"rabbitmqConfig"`
 	RagModelConfig     `toml:"ragModelConfig"`
 	VoiceServiceConfig `toml:"voiceServiceConfig"`
+	RateLimitConfig    `toml:"rateLimitConfig"`
+	OnlineConfig       `toml:"onlineConfig"`
 }
 
 type RedisKeyConfig struct {
 	CaptchaPrefix   string
 	IndexName       string
 	IndexNamePrefix string
+	OnlinePrefix    string
 }
 
 var DefaultRedisKeyConfig = RedisKeyConfig{
 	CaptchaPrefix:   "captcha:%s",
 	IndexName:       "rag_docs:%s:idx",
 	IndexNamePrefix: "rag_docs:%s:",
+	OnlinePrefix:    "online:user:%s",
 }
 
 var config *Config

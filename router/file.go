@@ -8,4 +8,5 @@ import (
 
 func FileRouter(r *gin.RouterGroup) {
 	r.POST("/upload", file.UploadRagFile)
+	r.GET("/index-status", file.GetIndexStatus)
 }

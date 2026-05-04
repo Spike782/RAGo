@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -984,6 +986,131 @@ func (c *WeatherAPIClient) WebFetch(ctx context.Context, rawURL string, maxChars
 	return truncateRunes(text, maxChars), nil
 }
 
+func (c *WeatherAPIClient) TranslateText(ctx context.Context, text, sourceLang, targetLang string) (string, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", fmt.Errorf("text is required")
+	}
+
+	sourceLang = normalizeLangCode(sourceLang, "auto")
+	targetLang = normalizeLangCode(targetLang, "zh")
+	if sourceLang != "auto" && sourceLang == targetLang {
+		return text, nil
+	}
+
+	translated, err := c.translateByOpenAI(ctx, text, sourceLang, targetLang)
+	if err != nil {
+		return "", err
+	}
+	translated = strings.TrimSpace(translated)
+	if translated == "" {
+		return "", fmt.Errorf("empty translation result")
+	}
+	return translated, nil
+}
+
+func (c *WeatherAPIClient) translateByOpenAI(ctx context.Context, text, sourceLang, targetLang string) (string, error) {
+	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	if apiKey == "" {
+		return "", fmt.Errorf("OPENAI_API_KEY is empty")
+	}
+
+	baseURL := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(os.Getenv("OPEN_AI_BASE_URL"))
+	}
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+
+	modelName := strings.TrimSpace(os.Getenv("OPENAI_MODEL_NAME"))
+	if modelName == "" {
+		modelName = "gpt-4o-mini"
+	}
+
+	systemPrompt := fmt.Sprintf(
+		"You are a translation engine. Translate text from %s to %s. Return translation only.",
+		sourceLang, targetLang,
+	)
+	reqBody := map[string]any{
+		"model": modelName,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": text},
+		},
+		"temperature": 0.1,
+	}
+
+	raw, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal translation request failed: %w", err)
+	}
+
+	endpoint := strings.TrimRight(baseURL, "/") + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+	if err != nil {
+		return "", fmt.Errorf("create translation request failed: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("translation request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	if err != nil {
+		return "", fmt.Errorf("read translation response failed: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("translation status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var completion struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(body, &completion); err != nil {
+		return "", fmt.Errorf("parse translation response failed: %w", err)
+	}
+	if len(completion.Choices) == 0 {
+		return "", fmt.Errorf("translation response has no choices")
+	}
+	return completion.Choices[0].Message.Content, nil
+}
+
+func normalizeLangCode(lang, fallback string) string {
+	v := strings.ToLower(strings.TrimSpace(lang))
+	if v == "" {
+		return fallback
+	}
+	switch v {
+	case "auto", "zh", "en", "ja", "ko", "fr", "de", "es", "ru", "it", "pt", "ar", "hi":
+		return v
+	case "chinese":
+		return "zh"
+	case "english":
+		return "en"
+	case "japanese":
+		return "ja"
+	case "korean":
+		return "ko"
+	case "french":
+		return "fr"
+	case "german":
+		return "de"
+	case "spanish":
+		return "es"
+	default:
+		return v
+	}
+}
+
 func weatherCodeToText(code int) string {
 	switch code {
 	case 0:
@@ -1060,6 +1187,19 @@ func NewMCPServer() *server.MCPServer {
 		case string:
 			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 				return n
+			}
+		}
+		return def
+	}
+	parseOptionalString := func(args map[string]any, key, def string) string {
+		raw, ok := args[key]
+		if !ok {
+			return def
+		}
+		if s, ok := raw.(string); ok {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				return s
 			}
 		}
 		return def
@@ -1208,6 +1348,48 @@ func NewMCPServer() *server.MCPServer {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					mcp.TextContent{Type: "text", Text: text},
+				},
+			}, nil
+		},
+	)
+
+	// 5) Translation
+	mcpServer.AddTool(
+		mcp.NewTool(
+			"translate_text",
+			mcp.WithDescription("Translate text between languages"),
+			mcp.WithString(
+				"text",
+				mcp.Description("Input text to translate"),
+				mcp.Required(),
+			),
+			mcp.WithString(
+				"source_lang",
+				mcp.Description("Source language code, e.g. auto|zh|en"),
+			),
+			mcp.WithString(
+				"target_lang",
+				mcp.Description("Target language code, e.g. zh|en|ja"),
+				mcp.Required(),
+			),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			args := request.GetArguments()
+			text, ok := args["text"].(string)
+			if !ok || strings.TrimSpace(text) == "" {
+				return nil, fmt.Errorf("invalid text argument")
+			}
+
+			sourceLang := parseOptionalString(args, "source_lang", "auto")
+			targetLang := parseOptionalString(args, "target_lang", "zh")
+			result, err := weatherClient.TranslateText(ctx, text, sourceLang, targetLang)
+			if err != nil {
+				return nil, err
+			}
+
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					mcp.TextContent{Type: "text", Text: result},
 				},
 			}, nil
 		},
